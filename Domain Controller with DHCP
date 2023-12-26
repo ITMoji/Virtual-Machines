@@ -1,0 +1,44 @@
+# Define VM parameters
+$VMName = "DCVM"
+$MemoryGB = 2
+$ProcessorCount = 2
+$VHDPath = "C:\HyperV\VirtualHardDisks\DCVM.vhdx"
+$VHDSizeGB = 50
+$SwitchName = "DefaultSwitch"
+$DomainName = "mydomain.local"
+$DomainAdministrator = "Administrator"
+$DomainPassword = "YourPassword"
+
+# Create a new VM
+New-VM -Name $VMName -MemoryStartupBytes $MemoryGB*1GB -SwitchName $SwitchName
+
+# Create a new VHD for the VM
+New-VHD -Path $VHDPath -SizeBytes $VHDSizeGB*1GB
+
+# Attach the VHD to the VM
+Add-VMHardDiskDrive -VMName $VMName -Path $VHDPath
+
+# Start the VM
+Start-VM -Name $VMName
+
+# Wait for the VM to start (adjust sleep time based on your system)
+Start-Sleep -Seconds 10
+
+# Install Windows Server OS (assuming ISO is mounted)
+Install-VMGuestPackage -VMName $VMName -PackageName Microsoft-Nano-Server-DSC-Package -SourcePath D:\ -Restart -Force
+
+# Wait for the VM to restart
+Start-Sleep -Seconds 30
+
+# Set the administrator password for the VM (change to your desired password)
+$Credential = New-Object PSCredential -ArgumentList $DomainAdministrator, (ConvertTo-SecureString -String $DomainPassword -AsPlainText -Force)
+Invoke-Command -ScriptBlock {
+    net user Administrator $using:DomainPassword
+} -Credential $Credential -VMName $VMName
+
+# Install Active Directory and DHCP roles
+Invoke-Command -ScriptBlock {
+    Install-WindowsFeature -Name AD-Domain-Services,DHCP -IncludeManagementTools
+    Install-ADDSForest -DomainName $using:DomainName -InstallDns -Force
+    Install-DhcpServer -Confirm:$false
+} -Credential $Credential -VMName $VMName
